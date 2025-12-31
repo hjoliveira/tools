@@ -253,10 +253,12 @@
             let current = '';
             let inQuotes = false;
 
+            // First pass: split into lines, respecting quoted fields that may contain newlines
             for (let i = 0; i < text.length; i++) {
                 const char = text[i];
 
                 if (char === '"') {
+                    current += char;
                     if (inQuotes && text[i + 1] === '"') {
                         current += '"';
                         i++;
@@ -280,6 +282,7 @@
                 lines.push(current);
             }
 
+            // Second pass: parse each line into fields
             return lines.map(line => {
                 const fields = [];
                 let field = '';
@@ -290,9 +293,11 @@
 
                     if (char === '"') {
                         if (inFieldQuotes && line[i + 1] === '"') {
+                            // Escaped quote - add single quote to field
                             field += '"';
                             i++;
                         } else {
+                            // Toggle quote state, don't add quote to field value
                             inFieldQuotes = !inFieldQuotes;
                         }
                     } else if (char === ',' && !inFieldQuotes) {
