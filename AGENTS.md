@@ -52,3 +52,30 @@ body {
 | Library | Use Case | CDN |
 |---------|----------|-----|
 | JSZip | Creating ZIP files | `https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js` |
+
+## Adding a New Tool
+
+When adding a new tool to the repository:
+
+1. **Create the tool folder and file**
+   ```
+   /new-tool-name/
+   └── index.html
+   ```
+
+2. **Update the landing page** (`/index.html`)
+
+   Add a new card to the `.tools-grid` section:
+   ```html
+   <a href="new-tool-name/" class="tool-card">
+       <h2>Tool Display Name</h2>
+       <p>Brief description of what the tool does.</p>
+   </a>
+   ```
+
+3. **Update the README** (`/README.md`)
+
+   Add a row to the Available Tools table:
+   ```markdown
+   | [Tool Display Name](https://hjoliveira.github.io/tools/new-tool-name/) | Brief description |
+   ```
