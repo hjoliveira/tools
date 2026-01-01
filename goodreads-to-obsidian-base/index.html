@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goodreads to Obsidian Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #a855f7;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #888;
+            margin-bottom: 30px;
+        }
+        .upload-area {
+            border: 2px dashed #a855f7;
+            border-radius: 12px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(168, 85, 247, 0.05);
+        }
+        .upload-area:hover {
+            background: rgba(168, 85, 247, 0.1);
+            border-color: #c084fc;
+        }
+        .upload-area.dragover {
+            background: rgba(168, 85, 247, 0.15);
+            border-color: #c084fc;
+        }
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        .upload-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .upload-hint {
+            color: #888;
+            font-size: 14px;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        #status {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+        #status.success {
+            display: block;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid #22c55e;
+            color: #22c55e;
+        }
+        #status.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            color: #ef4444;
+        }
+        #status.processing {
+            display: block;
+            background: rgba(168, 85, 247, 0.1);
+            border: 1px solid #a855f7;
+            color: #c084fc;
+        }
+        .book-count {
+            font-weight: bold;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Goodreads to Obsidian Converter</h1>
+    <p class="subtitle">Convert your Goodreads library export to Obsidian markdown files</p>
+
+    <div class="upload-area" id="dropZone">
+        <div class="upload-icon">📚</div>
+        <div class="upload-text">Drop your Goodreads CSV file here</div>
+        <div class="upload-hint">or click to browse</div>
+        <input type="file" id="fileInput" accept=".csv">
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+
+        // Click to upload
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = type;
+        }
+
+        function parseCSV(text) {
+            const lines = [];
+            let current = '';
+            let inQuotes = false;
+
+            // First pass: split into lines, respecting quoted fields that may contain newlines
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+
+                if (char === '"') {
+                    current += char;
+                    if (inQuotes && text[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                    if (current.trim() || lines.length > 0) {
+                        lines.push(current);
+                    }
+                    current = '';
+                    if (char === '\r' && text[i + 1] === '\n') {
+                        i++;
+                    }
+                } else {
+                    current += char;
+                }
+            }
+
+            if (current.trim()) {
+                lines.push(current);
+            }
+
+            // Second pass: parse each line into fields
+            return lines.map(line => {
+                const fields = [];
+                let field = '';
+                let inFieldQuotes = false;
+
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+
+                    if (char === '"') {
+                        if (inFieldQuotes && line[i + 1] === '"') {
+                            // Escaped quote - add single quote to field
+                            field += '"';
+                            i++;
+                        } else {
+                            // Toggle quote state, don't add quote to field value
+                            inFieldQuotes = !inFieldQuotes;
+                        }
+                    } else if (char === ',' && !inFieldQuotes) {
+                        fields.push(field);
+                        field = '';
+                    } else {
+                        field += char;
+                    }
+                }
+                fields.push(field);
+
+                return fields;
+            });
+        }
+
+        function sanitizeFilename(title) {
+            // Remove or replace characters that are invalid in filenames
+            return title
+                .replace(/[<>:"/\\|?*]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function escapeYamlValue(value) {
+            if (!value) return '';
+            // If value contains special characters, wrap in quotes
+            if (value.includes(':') || value.includes('#') || value.includes('\n') ||
+                value.includes('"') || value.startsWith(' ') || value.endsWith(' ')) {
+                return '"' + value.replace(/"/g, '\\"') + '"';
+            }
+            return value;
+        }
+
+        function createMarkdownContent(headers, row) {
+            let frontmatter = '---\n';
+
+            for (let i = 0; i < headers.length; i++) {
+                const header = headers[i].trim();
+                let value = (row[i] || '').trim();
+
+                // Skip Book Id as it's internal to Goodreads
+                if (header === 'Book Id') continue;
+
+                // Clean up ISBN values (remove ="")
+                if (value.startsWith('="') && value.endsWith('"')) {
+                    value = value.slice(2, -1);
+                }
+
+                // Format the header for YAML (keep spaces for readability)
+                const yamlKey = header;
+                const yamlValue = escapeYamlValue(value);
+
+                frontmatter += `${yamlKey}: ${yamlValue}\n`;
+            }
+
+            frontmatter += '---\n#book\n';
+
+            return frontmatter;
+        }
+
+        async function processFile(file) {
+            if (!file.name.endsWith('.csv')) {
+                showStatus('Please upload a CSV file', 'error');
+                return;
+            }
+
+            showStatus('Processing your library...', 'processing');
+
+            try {
+                const text = await file.text();
+                const rows = parseCSV(text);
+
+                if (rows.length < 2) {
+                    showStatus('CSV file appears to be empty or invalid', 'error');
+                    return;
+                }
+
+                const headers = rows[0];
+                const titleIndex = headers.findIndex(h => h.trim().toLowerCase() === 'title');
+
+                if (titleIndex === -1) {
+                    showStatus('Could not find Title column in CSV', 'error');
+                    return;
+                }
+
+                const zip = new JSZip();
+                let bookCount = 0;
+
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (row.length < 2) continue; // Skip empty rows
+
+                    const title = row[titleIndex];
+                    if (!title || !title.trim()) continue;
+
+                    const filename = sanitizeFilename(title) + '.md';
+                    const content = createMarkdownContent(headers, row);
+
+                    zip.file(filename, content);
+                    bookCount++;
+                }
+
+                if (bookCount === 0) {
+                    showStatus('No books found in the CSV file', 'error');
+                    return;
+                }
+
+                const blob = await zip.generateAsync({ type: 'blob' });
+
+                // Create download link
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'obsidian-books.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showStatus(`Successfully converted ${bookCount} books! Download started.`, 'success');
+
+            } catch (error) {
+                console.error(error);
+                showStatus('Error processing file: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
