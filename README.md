@@ -1,6 +1,6 @@
-# Browser Tools
+# Tools
 
-A collection of single-page tools that run entirely in your browser. No server-side processing - your data never leaves your machine.
+A collection of single-page tools that run entirely in the browser.
 
 **Live site:** https://hjoliveira.github.io/tools/
 
